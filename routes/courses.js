@@ -22,7 +22,17 @@ router.post('/', auth, async (req, res) => {
 // Get All Courses
 router.get('/', auth, async (req, res) => {
   try {
-    const courses = await Course.find().populate('teacher', 'name');
+    const courses = await Course.find().populate('teacher', 'name').populate('students', 'name');
+    res.json({ courses });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Get Course by Student ID
+router.get('/student/:id', auth, async (req, res) => {
+  try {
+    const courses = await Course.find({ students: req.params.id }).populate('teacher', 'name').populate('students', 'name');
     res.json({ courses });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -30,7 +40,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // Enroll in Course (Student only)
-router.post('/:id/enroll', auth, async (req, res) => {
+router.put('/:id/enroll', auth, async (req, res) => {
   if (req.user.role !== 'student') {
     return res.status(403).json({ message: 'Access denied' });
   }
