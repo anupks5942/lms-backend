@@ -6,13 +6,14 @@ const quizSchema = new mongoose.Schema({
   course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
   questions: [{
     questionText: { type: String, required: true },
-    type: { type: String, enum: ['multiple-choice'], default: 'multiple-choice' }, // Only multiple-choice allowed
-    options: [{ type: String, required: true }], // Required options
-    correctAnswer: { type: String, required: true } // Required for auto-grading
+    type: { type: String, enum: ['multiple-choice'], default: 'multiple-choice' },
+    options: [{ type: String, required: true }],
+    correctAnswer: { type: String, required: true }
   }],
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // Teacher
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   dueDate: { type: Date },
   createdAt: { type: Date, default: Date.now },
+  attemptedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 });
 
 module.exports = mongoose.model('Quiz', quizSchema);
