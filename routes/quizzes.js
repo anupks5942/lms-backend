@@ -4,6 +4,7 @@ const Quiz = require('../models/Quiz');
 const QuizSubmission = require('../models/QuizSubmission');
 const Course = require('../models/Course');
 const Grade = require('../models/Grade');
+const mongoose = require('mongoose');
 
 const router = express.Router();
 
@@ -34,7 +35,50 @@ router.post('/:courseId', auth, async (req, res) => {
 // Get Quizzes for a Course
 router.get('/course/:courseId', auth, async (req, res) => {
   try {
-    const quizzes = await Quiz.find({ course: req.params.courseId }).populate('createdBy', 'name');
+    if (!mongoose.Types.ObjectId.isValid(req.params.courseId)) {
+      return res.status(400).json({ message: 'Invalid course ID' });
+    }
+
+    const course = await Course.findById(req.params.courseId).select('students teacher');
+    if (!course) return res.status(404).json({ message: 'Course not found' });
+
+    // Restrict access: Students must be enrolled, teachers must own the course, admins have full access
+    if (
+      req.user.role === 'student' &&
+      !course.students.some(studentId => studentId.equals(req.user._id))
+    ) {
+      return res.status(403).json({ message: 'Not enrolled in this course' });
+    }
+    if (
+      req.user.role === 'teacher' &&
+      course.teacher.toString() !== req.user.id
+    ) {
+      return res.status(403).json({ message: 'Not authorized to view quizzes for this course' });
+    }
+
+    // Fetch quizzes, exclude sensitive fields for students
+    const selectFields = req.user.role === 'student'
+      ? 'title description course dueDate createdBy createdAt' // Exclude questions
+      : 'title description course questions dueDate createdBy createdAt'; // Include all for teachers/admins
+
+    const quizzes = await Quiz.find({ course: req.params.courseId })
+      .select(selectFields)
+      .populate('createdBy', 'name')
+      .lean();
+
+    // For students, add submission status
+    if (req.user.role === 'student') {
+      const submissions = await QuizSubmission.find({
+        student: req.user._id,
+        quiz: { $in: quizzes.map(q => q._id) },
+      }).select('quiz');
+
+      const submittedQuizIds = new Set(submissions.map(s => s.quiz.toString()));
+      quizzes.forEach(quiz => {
+        quiz.hasSubmitted = submittedQuizIds.has(quiz._id.toString());
+      });
+    }
+
     res.json(quizzes);
   } catch (err) {
     res.status(500).json({ message: err.message });

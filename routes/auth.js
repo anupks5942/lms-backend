@@ -36,9 +36,8 @@ router.post('/register', async (req, res) => {
     });
     await user.save();
 
-    // Send verification email
-    const verificationUrl = `http://192.168.159.246:3000/auth/verify/${verificationToken}`;
-    // const verificationUrl = `https://lms-backend-f2fk.onrender.com/auth/verify/${verificationToken}`;
+    // const verificationUrl = `http://192.168.159.246:3000/auth/verify/${verificationToken}`;
+    const verificationUrl = `https://lms-backend-f2fk.onrender.com/auth/verify/${verificationToken}`;
     await transporter.sendMail({
       from: `"LMS Platform" <${process.env.EMAIL_USER}>`,
       to: email,

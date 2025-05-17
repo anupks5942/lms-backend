@@ -39,6 +39,16 @@ router.get('/student/:id', auth, async (req, res) => {
   }
 });
 
+// Get Course by Teacher ID
+router.get('/teacher/:id', auth, async (req, res) => {
+  try {
+    const courses = await Course.find({ teacher: req.params.id }).populate('teacher', 'name').populate('students', 'name');
+    res.json({ courses });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // Enroll in Course (Student only)
 router.put('/:id/enroll', auth, async (req, res) => {
   if (req.user.role !== 'student') {
