@@ -3,6 +3,7 @@ const auth = require('../middleware/auth');
 const Course = require('../models/Course');
 const mongoose = require('mongoose');
 const router = express.Router();
+const User = require('../models/User');
 
 // Create Course (Teacher/Admin only)
 router.post('/', auth, async (req, res) => {
@@ -28,19 +29,25 @@ router.post('/', auth, async (req, res) => {
 // Get All Courses
 router.get('/', auth, async (req, res) => {
   try {
+    console.log('Fetching all courses for user:', req.user.id);
     const courses = await Course.find()
       .select('title description category teacher students createdAt')
       .populate('teacher', 'name')
+      .populate('students', '_id name email')
       .lean();
+    console.log(`Found ${courses.length} courses`);
     res.json({ courses });
   } catch (err) {
+    console.error('Error fetching all courses:', err);
     res.status(500).json({ message: err.message });
   }
 });
 
+// Filter/Search Courses
 router.get('/filter', auth, async (req, res) => {
   try {
     const { category, query } = req.query;
+    console.log('Filtering courses:', { category, query, userId: req.user.id });
 
     const validCategories = [
       'Technology',
@@ -55,6 +62,7 @@ router.get('/filter', auth, async (req, res) => {
 
     // Validate category if provided
     if (category && !validCategories.includes(category)) {
+      console.log('Invalid category provided:', category);
       return res.status(400).json({ message: 'Invalid category' });
     }
 
@@ -71,34 +79,46 @@ router.get('/filter', auth, async (req, res) => {
         { title: { $regex: regex } },
         { description: { $regex: regex } },
       ];
+    } else if (query) {
+      console.log('Invalid query provided:', query);
+      return res.status(400).json({ message: 'Search query is required' });
     }
-    // If query is empty or missing, do nothing — return all (or category-filtered) courses
 
     const courses = await Course.find(filter)
       .select('title description category teacher students createdAt')
       .populate('teacher', 'name')
+      .populate('students', '_id name email')
       .lean();
-
+    console.log(`Found ${courses.length} courses with filter`);
     res.json({ courses });
   } catch (err) {
+    console.error('Error filtering courses:', err);
     res.status(500).json({ message: err.message });
   }
 });
 
-// Get Course by ID (After search routes)
+// Get Course by ID
 router.get('/:id', auth, async (req, res) => {
   try {
+    console.log('Fetching course ID:', req.params.id);
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      console.log('Invalid course ID:', req.params.id);
       return res.status(400).json({ message: 'Invalid course ID' });
     }
     const course = await Course.findById(req.params.id)
       .select('title description category teacher lectures students createdAt')
       .populate('teacher', 'name')
+      .populate('students', '_id name email')
       .lean();
-    if (!course) return res.status(404).json({ message: 'Course not found' });
-    const isEnrolled = course.students.some(studentId => studentId.equals(req.user._id));
+    if (!course) {
+      console.log('Course not found:', req.params.id);
+      return res.status(404).json({ message: 'Course not found' });
+    }
+    const isEnrolled = course.students.some(student => student._id.equals(req.user._id));
+    console.log('Course fetched, isEnrolled:', isEnrolled);
     res.json({ course, isEnrolled });
   } catch (err) {
+    console.error('Error fetching course by ID:', err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -106,15 +126,20 @@ router.get('/:id', auth, async (req, res) => {
 // Get Course by Student ID
 router.get('/student/:id', auth, async (req, res) => {
   try {
+    console.log('Fetching courses for student ID:', req.params.id);
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      console.log('Invalid student ID:', req.params.id);
       return res.status(400).json({ message: 'Invalid student ID' });
     }
     const courses = await Course.find({ students: req.params.id })
       .select('title description category teacher students createdAt')
       .populate('teacher', 'name')
+      .populate('students', '_id name email')
       .lean();
+    console.log(`Found ${courses.length} courses for student`);
     res.json({ courses });
   } catch (err) {
+    console.error('Error fetching courses by student ID:', err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -122,15 +147,20 @@ router.get('/student/:id', auth, async (req, res) => {
 // Get Course by Teacher ID
 router.get('/teacher/:id', auth, async (req, res) => {
   try {
+    console.log('Fetching courses for teacher ID:', req.params.id);
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      console.log('Invalid teacher ID:', req.params.id);
       return res.status(400).json({ message: 'Invalid teacher ID' });
     }
     const courses = await Course.find({ teacher: req.params.id })
       .select('title description category teacher students createdAt')
       .populate('teacher', 'name')
+      .populate('students', '_id name email')
       .lean();
+    console.log(`Found ${courses.length} courses for teacher`);
     res.json({ courses });
   } catch (err) {
+    console.error('Error fetching courses by teacher ID:', err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -138,30 +168,57 @@ router.get('/teacher/:id', auth, async (req, res) => {
 // Enroll in Course (Student only)
 router.put('/:id/enroll', auth, async (req, res) => {
   if (req.user.role !== 'student') {
+    console.log('Access denied: Non-student tried to enroll');
     return res.status(403).json({ message: 'Access denied' });
   }
+
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    const courseId = req.params.id;
+    const userId = req.user._id;
+
+    console.log(`Enrollment attempt: user=${userId}, course=${courseId}`);
+
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      console.log('Invalid course ID:', courseId);
       return res.status(400).json({ message: 'Invalid course ID' });
     }
-    const course = await Course.findById(req.params.id);
-    if (!course) return res.status(404).json({ message: 'Course not found' });
-    if (course.students.some(studentId => studentId.equals(req.user._id))) {
+
+    const course = await Course.findById(courseId);
+    if (!course) {
+      console.log('Course not found:', courseId);
+      return res.status(404).json({ message: 'Course not found' });
+    }
+
+    const alreadyEnrolled = course.students.some(studentId => studentId && studentId.equals(req.user._id));
+    if (alreadyEnrolled) {
+      console.log('User already enrolled:', userId);
       return res.status(400).json({ message: 'Already enrolled' });
     }
-    course.students.push(req.user._id);
-    await course.save();
 
-    // Sync with user (if using enrolledCourses)
-    const user = await User.findById(req.user._id);
-    user.enrolledCourses = user.enrolledCourses || [];
-    if (!user.enrolledCourses.some(courseId => courseId.equals(req.params.id))) {
-      user.enrolledCourses.push(req.params.id);
-      await user.save();
+    console.log('Enrolling user into course...');
+    course.students.push(userId);
+    await course.save();
+    console.log('Course updated with new student.');
+
+    const user = await User.findById(userId);
+    if (!user) {
+      console.log('User not found:', userId);
+      return res.status(404).json({ message: 'User not found' });
     }
 
+    user.enrolledCourses = user.enrolledCourses || [];
+    const alreadyInUser = user.enrolledCourses.some(courseIdInUser => courseIdInUser.equals(courseId));
+    if (!alreadyInUser) {
+      user.enrolledCourses.push(courseId);
+      await user.save();
+      console.log('User updated with new enrolled course.');
+    }
+
+    console.log('Enrollment successful');
     res.json({ message: 'Enrolled successfully' });
+
   } catch (err) {
+    console.error('Enrollment error:', err);
     res.status(500).json({ message: err.message });
   }
 });
